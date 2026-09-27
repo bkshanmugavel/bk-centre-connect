@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 import type { Database } from '@/types/database.types';
 
@@ -16,8 +16,18 @@ export async function updateSession(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  // If environment variables are not yet configured, allow public browsing to avoid crash
+  const pathname = request.nextUrl.pathname;
+  const isProtectedRoute = pathname.startsWith('/app');
+  const isAuthRoute = pathname.startsWith('/login');
+
+  // If environment variables are not yet configured, protect /app but allow other public routes
   if (!supabaseUrl || !supabaseKey) {
+    if (isProtectedRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = '/login';
+      url.searchParams.set('redirectedFrom', pathname);
+      return NextResponse.redirect(url);
+    }
     return response;
   }
 
@@ -26,7 +36,7 @@ export async function updateSession(request: NextRequest) {
       getAll() {
         return request.cookies.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
@@ -45,12 +55,6 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const pathname = request.nextUrl.pathname;
-
-  // Protected route check: /app routes require authentication
-  const isProtectedRoute = pathname.startsWith('/app');
-  const isAuthRoute = pathname.startsWith('/login');
 
   if (isProtectedRoute && !user) {
     const url = request.nextUrl.clone();
